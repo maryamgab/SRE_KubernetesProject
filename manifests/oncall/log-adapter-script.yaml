@@ -1,0 +1,47 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: log-adapter-script 
+data:  
+  adapter.py: |     
+    import sys, json, time, os
+    from datetime import datetime, timezone
+
+    LOG_FILE = '/var/log/oncall/app.log'
+    GROUP = 'ab1_gabdrashitova'
+    SERVICE = 'oncall'
+
+    print('Waiting for log file...', file=sys.stderr)
+    while not os.path.exists(LOG_FILE):
+        time.sleep(1)
+
+    print('Log file found. Waiting for content...', file=sys.stderr)
+    while os.path.getsize(LOG_FILE) == 0:
+        time.sleep(1)
+
+    print('Content detected. Starting to tail...', file=sys.stderr)
+
+    with open(LOG_FILE, 'r') as f:
+        f.seek(0, 2)
+        while True:
+            line = f.readline()
+            if line:
+                line = line.rstrip()
+                level = 'info'
+                if any(w in line for w in ['ERROR', 'Error', 'error', 'Traceback', 'Exception']):
+                    level = 'error'
+                elif any(w in line for w in ['WARN', 'Warning', 'warning']):
+                    level = 'warn'
+                log_entry = {
+                    '@timestamp': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
+                    'level': level,
+                    'message': line,
+                    'group': GROUP,
+                    'service': SERVICE,
+                    'system': 'oncall',
+                    'env': 'prod'
+                }
+                print(json.dumps(log_entry, ensure_ascii=False))
+                sys.stdout.flush()
+            else:
+                time.sleep(0.5)

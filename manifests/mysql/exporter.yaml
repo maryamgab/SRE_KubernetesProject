@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mysql-exporter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mysql-exporter
+  template:
+    metadata:
+      labels:
+        app: mysql-exporter
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9104"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+        - name: mysqld-exporter
+          image: prom/mysqld-exporter:v0.15.0
+          ports:
+            - containerPort: 9104
+          args:
+            - "--web.listen-address=:9104"
+            - "--web.telemetry-path=/metrics"
+            - "--config.my-cnf=/etc/mysql/.my.cnf"
+            - "--collect.global_status"
+            - "--collect.global_variables"
+            - "--collect.info_schema.innodb_cmp"
+            - "--collect.info_schema.innodb_cmpmem"
+            - "--collect.info_schema.query_response_time"
+          volumeMounts:
+            - name: my-cnf
+              mountPath: /etc/mysql
+              readOnly: true
+          livenessProbe:
+            httpGet:
+              path: /metrics
+              port: 9104
+            initialDelaySeconds: 15
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /metrics
+              port: 9104
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      volumes:
+        - name: my-cnf
+          secret:
+            secretName: mysql-exporter-my-cnf
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql-exporter
+spec:
+  selector:
+    app: mysql-exporter
+  ports:
+    - port: 9104
+      targetPort: 9104

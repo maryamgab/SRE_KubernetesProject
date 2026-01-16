@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: oncall-sla
+  labels:
+    app: oncall-sla
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: oncall-sla
+  template:
+    metadata:
+      labels:
+        app: oncall-sla
+    spec:
+      containers:
+        - name: sla
+          image: gabmaryam/oncall-sla:0.5
+          env:
+            - name: MYSQL_HOST
+              value: "mysql"  # ← ваш StatefulSet MySQL
+            - name: MYSQL_PORT
+              value: "3306"
+            - name: MYSQL_USER
+              value: "root"
+            - name: MYSQL_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: mysql
+                  key: MYSQL_ROOT_PASSWORD
+            - name: MYSQL_DB_NAME
+              value: "sla"
+          livenessProbe:
+            exec:
+              command: ["echo", "alive"]
+            initialDelaySeconds: 30
+            periodSeconds: 60

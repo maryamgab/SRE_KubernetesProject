@@ -1,0 +1,93 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: oncall
+  labels:
+    app.kubernetes.io/name: oncall
+    app.kubernetes.io/component: web
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: oncall
+      app.kubernetes.io/component: web
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: oncall
+        app.kubernetes.io/component: web
+      annotations:
+        sage/group: "ab1_gabdrashitova"
+    spec:
+      initContainers:
+        - name: init-log-file
+          image: busybox
+          command: ["sh", "-c"]
+          args: ["mkdir -p /var/log/oncall && touch /var/log/oncall/app.log"]
+          volumeMounts:
+            - name: shared-logs
+              mountPath: /var/log/oncall
+
+      volumes:
+        - name: oncall-config
+          configMap:
+            name: oncall
+        - name: shared-logs
+          emptyDir: {}
+        - name: adapter-script
+          configMap:
+            name: log-adapter-script
+
+      containers:
+        - name: oncall
+          image: knucksie/sre-ab-oncall:0.3
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              sudo -EHu oncall bash -c "source /home/oncall/env/bin/activate && python -u /home/oncall/entrypoint.py" 2>&1 | tee /var/log/oncall/app.log
+          env:
+            - name: DOCKER_DB_BOOTSTRAP
+              value: "1"
+          imagePullPolicy: IfNotPresent
+          ports:
+          - containerPort: 8080
+            name: http
+          - containerPort: 9090
+            name: metrics
+          livenessProbe:
+            httpGet:
+              path: /healthcheck
+              port: 8080
+            failureThreshold: 1
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /healthcheck
+              port: 8080
+            failureThreshold: 1
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          startupProbe:
+            httpGet:
+              path: /healthcheck
+              port: 8080
+            failureThreshold: 10
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          volumeMounts:
+            - name: oncall-config
+              mountPath: /home/oncall/config/config.yaml
+              subPath: oncall.conf
+              readOnly: true
+            - name: shared-logs
+              mountPath: /var/log/oncall
+
+        - name: log-json-adapter
+          image: python:3.11-slim
+          command: ["python3", "/script/adapter.py"]
+          volumeMounts:
+            - name: shared-logs
+              mountPath: /var/log/oncall
+            - name: adapter-script
+              mountPath: /script
